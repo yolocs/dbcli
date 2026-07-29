@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/databricks/cli/libs/env"
@@ -24,6 +25,37 @@ func TestSaveAndLoadBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, binding, got)
+}
+
+func TestSaveBindingFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not preserve Unix permission bits")
+	}
+
+	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	require.NoError(t, SaveBinding(ctx, Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://workspace.example.com",
+	}))
+
+	path, err := BindingPath(ctx)
+	require.NoError(t, err)
+	stat, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), stat.Mode().Perm())
+}
+
+func TestSaveBindingRejectsMissingMetadata(t *testing.T) {
+	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+
+	err := SaveBinding(ctx, Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceHost: "https://workspace.example.com",
+	})
+	require.ErrorContains(t, err, "workspace ID is required")
 }
 
 func TestLoadBindingMissingFile(t *testing.T) {

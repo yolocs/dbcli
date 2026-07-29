@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/databricks/cli/libs/env"
 )
@@ -35,6 +36,18 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 	path, err := BindingPath(ctx)
 	if err != nil {
 		return err
+	}
+	binding.Profile = strings.TrimSpace(binding.Profile)
+	binding.WorkspaceID = strings.TrimSpace(binding.WorkspaceID)
+	binding.WorkspaceHost = strings.TrimSpace(binding.WorkspaceHost)
+	if binding.Profile == "" {
+		return errors.New("profile is required")
+	}
+	if binding.WorkspaceID == "" {
+		return errors.New("workspace ID is required")
+	}
+	if binding.WorkspaceHost == "" {
+		return errors.New("workspace host is required")
 	}
 	host, err := NormalizeServerAddress(binding.RegistryHost)
 	if err != nil {

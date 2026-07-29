@@ -10,7 +10,9 @@ import (
 
 type TokenFunc func(context.Context, string) (string, error)
 
-type ProfileFunc func(context.Context, string) (string, error)
+type ProfileFunc func(context.Context, Registry) (string, error)
+
+const maxProtocolInputBytes = 64 * 1024
 
 type ProtocolOptions struct {
 	In             io.Reader
@@ -30,23 +32,28 @@ func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) er
 	case "get":
 		return handleGet(ctx, opts)
 	case "store", "erase":
-		_, err := io.Copy(io.Discard, opts.In)
+		_, err := readProtocolInput(opts.In)
+		if err != nil {
+			writeProtocolError(opts.Err, err)
+		}
 		return err
 	case "list":
 		return json.NewEncoder(opts.Out).Encode(map[string]string{})
 	default:
-		return fmt.Errorf("unsupported Docker credential helper action %q", action)
+		err := fmt.Errorf("unsupported Docker credential helper action %q", action)
+		writeProtocolError(opts.Err, err)
+		return err
 	}
 }
 
 func handleGet(ctx context.Context, opts ProtocolOptions) error {
-	if opts.ResolveProfile == nil {
-		err := errors.New("Docker credential profile resolver is not configured")
+	raw, err := readProtocolInput(opts.In)
+	if err != nil {
 		writeProtocolError(opts.Err, err)
 		return err
 	}
-	raw, err := io.ReadAll(opts.In)
-	if err != nil {
+	if opts.ResolveProfile == nil {
+		err := errors.New("Docker credential profile resolver is not configured")
 		writeProtocolError(opts.Err, err)
 		return err
 	}
@@ -55,7 +62,7 @@ func handleGet(ctx context.Context, opts ProtocolOptions) error {
 		writeProtocolError(opts.Err, err)
 		return err
 	}
-	profileName, err := opts.ResolveProfile(ctx, registry.Host)
+	profileName, err := opts.ResolveProfile(ctx, registry)
 	if err != nil {
 		writeProtocolError(opts.Err, err)
 		return err
@@ -74,6 +81,20 @@ func handleGet(ctx context.Context, opts ProtocolOptions) error {
 		Username: OAuthTokenUsername,
 		Secret:   token,
 	})
+}
+
+func readProtocolInput(r io.Reader) ([]byte, error) {
+	if r == nil {
+		return nil, nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(r, maxProtocolInputBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > maxProtocolInputBytes {
+		return nil, errors.New("Docker credential helper input is too large")
+	}
+	return raw, nil
 }
 
 func writeProtocolError(w io.Writer, err error) {

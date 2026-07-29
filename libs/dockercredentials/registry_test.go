@@ -12,6 +12,12 @@ func TestRegistryHost(t *testing.T) {
 	require.Equal(t, "123456789.containers.us-west-2.cloud.databricks.com", got)
 }
 
+func TestRegistryHostLowercasesRegion(t *testing.T) {
+	got, err := RegistryHost("123456789", "US-WEST-2")
+	require.NoError(t, err)
+	require.Equal(t, "123456789.containers.us-west-2.cloud.databricks.com", got)
+}
+
 func TestRegistryHostRejectsEmptyParts(t *testing.T) {
 	_, err := RegistryHost("", "us-west-2")
 	require.ErrorContains(t, err, "workspace ID is required")
@@ -41,5 +47,10 @@ func TestParseRegistryHost(t *testing.T) {
 
 func TestParseRegistryHostRejectsNonDARHost(t *testing.T) {
 	_, err := ParseRegistryHost("registry.example.com")
+	require.ErrorContains(t, err, "is not a Databricks Artifact Registry host")
+}
+
+func TestParseRegistryHostRejectsMalformedDARHost(t *testing.T) {
+	_, err := ParseRegistryHost("123.containers.us-west-2.extra.cloud.databricks.com")
 	require.ErrorContains(t, err, "is not a Databricks Artifact Registry host")
 }

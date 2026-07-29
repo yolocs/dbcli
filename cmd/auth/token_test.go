@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -923,6 +924,49 @@ func TestTokenCommandDockerFormatRequiresAction(t *testing.T) {
 	assert.ErrorContains(t, err, "Docker credential helper format requires one action: get, store, erase, or list")
 }
 
+func TestTokenCommandDockerListDoesNotResolveTokenStore(t *testing.T) {
+	ctx := cmdio.MockDiscard(cmdctx.GenerateExecId(t.Context()))
+	ctx = env.Set(ctx, storage.EnvVar, "invalid")
+	cmd := root.New(ctx)
+	cmd.AddCommand(New())
+	cmd.SetContext(ctx)
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"auth", "token", "--format=docker", "list"})
+
+	_, err := cmd.ExecuteContextC(ctx)
+	assert.NoError(t, err)
+	assert.JSONEq(t, `{}`, stdout.String())
+}
+
+func TestTokenCommandDockerFormatRejectsIncompatibleFlags(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		flag string
+	}{
+		{"profile", []string{"auth", "token", "--profile", "dev", "--format=docker", "list"}, "--profile"},
+		{"host", []string{"auth", "--host", "https://workspace.example.com", "token", "--format=docker", "list"}, "--host"},
+		{"account ID", []string{"auth", "--account-id", "abc", "token", "--format=docker", "list"}, "--account-id"},
+		{"workspace ID", []string{"auth", "--workspace-id", "123", "token", "--format=docker", "list"}, "--workspace-id"},
+		{"force refresh", []string{"auth", "token", "--force-refresh", "--format=docker", "list"}, "--force-refresh"},
+		{"output", []string{"--output=json", "auth", "token", "--format=docker", "list"}, "--output"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := cmdio.MockDiscard(cmdctx.GenerateExecId(t.Context()))
+			cmd := root.New(ctx)
+			cmd.AddCommand(New())
+			cmd.SetContext(ctx)
+			cmd.SetArgs(tc.args)
+
+			_, err := cmd.ExecuteContextC(ctx)
+			assert.ErrorContains(t, err, tc.flag+" cannot be used with --format=docker")
+		})
+	}
+}
+
 func TestDockerTokenFromProfileUsesForceRefresh(t *testing.T) {
 	args := dockerTokenLoadArgs(
 		"dev",
@@ -959,6 +1003,28 @@ func TestResolveDockerProfileUsesBinding(t *testing.T) {
 	assert.Equal(t, "dev", got)
 }
 
+func TestResolveDockerProfileRejectsBindingWorkspaceIDMismatch(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "456",
+		WorkspaceHost: "https://workspace.example.com",
+	})
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `Docker registry "123.containers.us-west-2.cloud.databricks.com" is bound to workspace "456", but the registry is for workspace "123"`)
+}
+
 func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
 	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
@@ -979,4 +1045,99 @@ func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
 		},
 	})
 	assert.ErrorContains(t, err, `profile "dev" is configured for workspace "456", but Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123"`)
+}
+
+func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://old-workspace.example.com",
+	})
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name: "dev",
+				Host: "https://new-workspace.example.com",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.example.com", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.example.com"`)
+}
+
+func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://accounts.cloud.databricks.com",
+	})
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://accounts.cloud.databricks.com",
+				AccountID:   "abc",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
+}
+
+func TestResolveDockerProfileUsesUniqueWorkspaceIDFallback(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	got, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "dev", got)
+}
+
+func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "first",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "123",
+			},
+			{
+				Name:        "second",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `multiple Databricks profiles are configured for Docker registry "123.containers.us-west-2.cloud.databricks.com": first, second`)
+}
+
+func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
+}
+
+func TestDockerProfileLoginRemedyHasNoTrailingPunctuation(t *testing.T) {
+	assert.False(t, strings.HasSuffix(dockerWorkspaceLoginRemedy, "."))
 }

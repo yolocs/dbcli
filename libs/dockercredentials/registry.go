@@ -19,7 +19,7 @@ type Registry struct {
 
 func RegistryHost(workspaceID, region string) (string, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	region = strings.TrimSpace(region)
+	region = strings.ToLower(strings.TrimSpace(region))
 	if workspaceID == "" {
 		return "", errors.New("workspace ID is required")
 	}
@@ -65,7 +65,7 @@ func ParseRegistryHost(raw string) (Registry, error) {
 	}
 	trimmed := strings.TrimSuffix(host, suffix)
 	workspaceID, region, ok := strings.Cut(trimmed, ".containers.")
-	if !ok || workspaceID == "" || region == "" {
+	if !ok || workspaceID == "" || region == "" || strings.Contains(workspaceID, ".") || strings.Contains(region, ".") {
 		return Registry{}, fmt.Errorf("%q is not a Databricks Artifact Registry host", host)
 	}
 	return Registry{WorkspaceID: workspaceID, Region: region, Host: host}, nil

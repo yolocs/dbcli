@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,8 @@ func TestHandleProtocolGet(t *testing.T) {
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &stdout,
 		Err: &bytes.Buffer{},
-		ResolveProfile: func(context.Context, string) (string, error) {
+		ResolveProfile: func(_ context.Context, registry Registry) (string, error) {
+			require.Equal(t, "123.containers.us-west-2.cloud.databricks.com", registry.Host)
 			return "dev", nil
 		},
 		Token: func(_ context.Context, profileName string) (string, error) {
@@ -73,7 +75,7 @@ func TestHandleProtocolGetResolveError(t *testing.T) {
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &bytes.Buffer{},
 		Err: &stderr,
-		ResolveProfile: func(context.Context, string) (string, error) {
+		ResolveProfile: func(context.Context, Registry) (string, error) {
 			return "", errors.New("registry is not configured")
 		},
 	})
@@ -87,7 +89,7 @@ func TestHandleProtocolGetTokenError(t *testing.T) {
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &bytes.Buffer{},
 		Err: &stderr,
-		ResolveProfile: func(context.Context, string) (string, error) {
+		ResolveProfile: func(context.Context, Registry) (string, error) {
 			return "dev", nil
 		},
 		Token: func(context.Context, string) (string, error) {
@@ -96,4 +98,24 @@ func TestHandleProtocolGetTokenError(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "token expired")
 	require.Contains(t, stderr.String(), "token expired")
+}
+
+func TestHandleProtocolGetRejectsLargeInput(t *testing.T) {
+	var stderr bytes.Buffer
+	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+		In:  strings.NewReader(strings.Repeat("a", maxProtocolInputBytes+1)),
+		Out: &bytes.Buffer{},
+		Err: &stderr,
+	})
+	require.ErrorContains(t, err, "Docker credential helper input is too large")
+	require.Contains(t, stderr.String(), "Docker credential helper input is too large")
+}
+
+func TestHandleProtocolStoreRejectsLargeInput(t *testing.T) {
+	err := HandleProtocol(context.Background(), "store", ProtocolOptions{
+		In:  strings.NewReader(strings.Repeat("a", maxProtocolInputBytes+1)),
+		Out: &bytes.Buffer{},
+		Err: &bytes.Buffer{},
+	})
+	require.ErrorContains(t, err, "Docker credential helper input is too large")
 }

@@ -27,6 +27,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const dockerWorkspaceLoginRemedy = "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`"
+
 func helpfulError(ctx context.Context, profile string, persistentAuth u2m.OAuthArgument) string {
 	loginMsg := auth.BuildLoginCommand(ctx, profile, persistentAuth)
 	return fmt.Sprintf("Try logging in again with `%s` before retrying. If this fails, please report this issue to the Databricks CLI maintainers at https://github.com/databricks/cli/issues/new", loginMsg)
@@ -65,32 +67,13 @@ and secret is not supported.`,
 			return fmt.Errorf("unsupported token format %q", tokenFormat)
 		}
 
+		if tokenFormat == "docker" {
+			return runDockerTokenCommand(ctx, cmd, args, tokenTimeout)
+		}
+
 		tokenStore, mode, err := storage.ResolveStore(ctx, "")
 		if err != nil {
 			return err
-		}
-
-		if tokenFormat == "docker" {
-			if len(args) != 1 {
-				return errors.New("Docker credential helper format requires one action: get, store, erase, or list")
-			}
-			return dockercredentials.HandleProtocol(ctx, args[0], dockercredentials.ProtocolOptions{
-				In:  cmd.InOrStdin(),
-				Out: cmd.OutOrStdout(),
-				Err: cmd.ErrOrStderr(),
-				ResolveProfile: func(ctx context.Context, registryHost string) (string, error) {
-					return resolveDockerProfile(ctx, registryHost, profile.DefaultProfiler)
-				},
-				Token: func(ctx context.Context, profileName string) (string, error) {
-					loadArgs := dockerTokenLoadArgs(profileName, authArguments, profile.DefaultProfiler, tokenStore, mode)
-					loadArgs.tokenTimeout = tokenTimeout
-					t, err := loadToken(ctx, loadArgs)
-					if err != nil {
-						return "", err
-					}
-					return t.AccessToken, nil
-				},
-			})
 		}
 
 		t, err := loadToken(ctx, loadTokenArgs{
@@ -117,6 +100,50 @@ and secret is not supported.`,
 	return cmd
 }
 
+func runDockerTokenCommand(ctx context.Context, cmd *cobra.Command, args []string, tokenTimeout time.Duration) error {
+	if err := rejectDockerTokenFlags(cmd); err != nil {
+		return err
+	}
+	if len(args) != 1 {
+		return errors.New("Docker credential helper format requires one action: get, store, erase, or list")
+	}
+	err := dockercredentials.HandleProtocol(ctx, args[0], dockercredentials.ProtocolOptions{
+		In:  cmd.InOrStdin(),
+		Out: cmd.OutOrStdout(),
+		Err: cmd.ErrOrStderr(),
+		ResolveProfile: func(ctx context.Context, registry dockercredentials.Registry) (string, error) {
+			return resolveDockerRegistryProfile(ctx, registry, profile.DefaultProfiler)
+		},
+		Token: func(ctx context.Context, profileName string) (string, error) {
+			tokenStore, mode, err := storage.ResolveStore(ctx, "")
+			if err != nil {
+				return "", err
+			}
+			loadArgs := dockerTokenLoadArgs(profileName, &auth.AuthArguments{}, profile.DefaultProfiler, tokenStore, mode)
+			loadArgs.tokenTimeout = tokenTimeout
+			t, err := loadToken(ctx, loadArgs)
+			if err != nil {
+				return "", err
+			}
+			return t.AccessToken, nil
+		},
+	})
+	if err != nil {
+		return root.ErrAlreadyPrinted
+	}
+	return nil
+}
+
+func rejectDockerTokenFlags(cmd *cobra.Command) error {
+	for _, name := range []string{"profile", "host", "account-id", "workspace-id", "force-refresh", "output"} {
+		flag := cmd.Flag(name)
+		if flag != nil && flag.Changed {
+			return fmt.Errorf("--%s cannot be used with --format=docker", name)
+		}
+	}
+	return nil
+}
+
 func dockerTokenLoadArgs(
 	profileName string,
 	authArguments *auth.AuthArguments,
@@ -141,7 +168,11 @@ func resolveDockerProfile(ctx context.Context, registryHost string, profiler pro
 	if err != nil {
 		return "", err
 	}
-	binding, ok, err := dockercredentials.LoadBinding(ctx, registryHost)
+	return resolveDockerRegistryProfile(ctx, registry, profiler)
+}
+
+func resolveDockerRegistryProfile(ctx context.Context, registry dockercredentials.Registry, profiler profile.Profiler) (string, error) {
+	binding, ok, err := dockercredentials.LoadBinding(ctx, registry.Host)
 	if err != nil {
 		return "", err
 	}
@@ -150,11 +181,21 @@ func resolveDockerProfile(ctx context.Context, registryHost string, profiler pro
 		if err != nil {
 			return "", err
 		}
-		if p == nil || !profile.MatchWorkspaceProfiles(*p) {
-			return "", errors.New("configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
+		if err := validateDockerWorkspaceProfile(p); err != nil {
+			return "", err
+		}
+		if binding.WorkspaceID != registry.WorkspaceID {
+			return "", fmt.Errorf("Docker registry %q is bound to workspace %q, but the registry is for workspace %q", registry.Host, binding.WorkspaceID, registry.WorkspaceID)
 		}
 		if p.WorkspaceID != "" && p.WorkspaceID != auth.WorkspaceIDNone && p.WorkspaceID != registry.WorkspaceID {
 			return "", fmt.Errorf("profile %q is configured for workspace %q, but Docker registry %q is for workspace %q", binding.Profile, p.WorkspaceID, registry.Host, registry.WorkspaceID)
+		}
+		if p.WorkspaceID == "" || p.WorkspaceID == auth.WorkspaceIDNone {
+			profileHost := sdkCanonicalHost(p.Host)
+			bindingHost := sdkCanonicalHost(binding.WorkspaceHost)
+			if bindingHost == "" || profileHost != bindingHost {
+				return "", fmt.Errorf("profile %q points to %q, but Docker registry %q was configured with %q", binding.Profile, p.Host, registry.Host, binding.WorkspaceHost)
+			}
 		}
 		return binding.Profile, nil
 	}
@@ -163,12 +204,43 @@ func resolveDockerProfile(ctx context.Context, registryHost string, profiler pro
 	if err != nil {
 		return "", err
 	}
+	var names []string
 	for _, p := range matches {
 		if p.WorkspaceID == registry.WorkspaceID {
-			return p.Name, nil
+			names = append(names, p.Name)
 		}
 	}
+	if len(names) == 1 {
+		p, err := loadProfileByName(ctx, names[0], profiler)
+		if err != nil {
+			return "", err
+		}
+		if err := validateDockerWorkspaceProfile(p); err != nil {
+			return "", err
+		}
+		return names[0], nil
+	}
+	if len(names) > 1 {
+		return "", fmt.Errorf("multiple Databricks profiles are configured for Docker registry %q: %s; run `databricks auth configure-docker --region %s`", registry.Host, strings.Join(names, ", "), registry.Region)
+	}
 	return "", fmt.Errorf("no Databricks profile is configured for Docker registry %q; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
+}
+
+func validateDockerWorkspaceProfile(p *profile.Profile) error {
+	if p == nil || p.Host == "" || !profile.MatchWorkspaceProfiles(*p) {
+		return errors.New(dockerWorkspaceLoginRemedy)
+	}
+	if auth.IsClassicAccountHost(sdkCanonicalHost(p.Host)) {
+		return errors.New(dockerWorkspaceLoginRemedy)
+	}
+	if p.AccountID != "" && (p.WorkspaceID == "" || p.WorkspaceID == auth.WorkspaceIDNone) {
+		return errors.New(dockerWorkspaceLoginRemedy)
+	}
+	return nil
+}
+
+func sdkCanonicalHost(host string) string {
+	return (&config.Config{Host: host}).CanonicalHostName()
 }
 
 func writeTokenOutput(w io.Writer, t *oauth2.Token, textMode bool) error {
