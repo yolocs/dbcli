@@ -27,7 +27,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const dockerWorkspaceLoginRemedy = "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`"
+const dockerWorkspaceLoginRemedy = "docker credential helper requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`"
 
 func helpfulError(ctx context.Context, profile string, persistentAuth u2m.OAuthArgument) string {
 	loginMsg := auth.BuildLoginCommand(ctx, profile, persistentAuth)
@@ -181,7 +181,7 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 	}
 	if ok {
 		if binding.Disabled {
-			return "", fmt.Errorf("docker registry %q is logged out; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
+			return "", fmt.Errorf("docker registry %q is logged out; %s", registry.Host, dockerWorkspaceLoginRemedy)
 		}
 		p, err := loadProfileByName(ctx, binding.Profile, profiler)
 		if err != nil {
@@ -225,9 +225,9 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 		return names[0], nil
 	}
 	if len(names) > 1 {
-		return "", fmt.Errorf("multiple Databricks profiles are configured for docker registry %q: %s; run `databricks auth configure-docker --region %s`", registry.Host, strings.Join(names, ", "), registry.Region)
+		return "", fmt.Errorf("multiple Databricks profiles are configured for docker registry %q: %s; %s", registry.Host, strings.Join(names, ", "), dockerWorkspaceLoginRemedy)
 	}
-	return "", fmt.Errorf("no Databricks profile is configured for docker registry %q; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
+	return "", fmt.Errorf("no Databricks profile is configured for docker registry %q; %s", registry.Host, dockerWorkspaceLoginRemedy)
 }
 
 func validateDockerWorkspaceProfile(p *profile.Profile) error {

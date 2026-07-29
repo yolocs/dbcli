@@ -26,6 +26,14 @@ func TestRegistryHostRejectsEmptyParts(t *testing.T) {
 	require.ErrorContains(t, err, "region is required")
 }
 
+func TestRegistryHostRejectsMalformedParts(t *testing.T) {
+	_, err := RegistryHost("123.456", "us-west-2")
+	require.ErrorContains(t, err, "workspace ID must not contain dots")
+
+	_, err = RegistryHost("123456789", "us.west.2")
+	require.ErrorContains(t, err, "region must not contain dots")
+}
+
 func TestParseRegistryHost(t *testing.T) {
 	cases := []string{
 		"123456789.containers.us-west-2.cloud.databricks.com",

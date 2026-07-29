@@ -969,6 +969,24 @@ func TestTokenCommandDockerFormatRejectsIncompatibleFlags(t *testing.T) {
 	}
 }
 
+func TestTokenCommandDockerEraseDisablesBinding(t *testing.T) {
+	ctx := env.WithUserHomeDir(cmdio.MockDiscard(cmdctx.GenerateExecId(t.Context())), t.TempDir())
+	cmd := root.New(ctx)
+	cmd.AddCommand(New())
+	cmd.SetContext(ctx)
+	cmd.SetIn(bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"))
+	cmd.SetArgs([]string{"auth", "token", "--format=docker", "erase"})
+
+	_, err := cmd.ExecuteContextC(ctx)
+	assert.NoError(t, err)
+
+	binding, ok, err := dockercredentials.LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.True(t, binding.Disabled)
+	assert.Equal(t, "123", binding.WorkspaceID)
+}
+
 func TestDockerTokenFromProfileUsesForceRefresh(t *testing.T) {
 	args := dockerTokenLoadArgs(
 		"dev",
@@ -1120,7 +1138,7 @@ func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
+	assert.ErrorContains(t, err, "docker credential helper requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
 }
 
 func TestResolveDockerProfileUsesUniqueWorkspaceIDFallback(t *testing.T) {
@@ -1152,8 +1170,9 @@ func TestResolveDockerProfileRejectsDisabledBinding(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `docker registry "123.containers.us-west-2.cloud.databricks.com" is logged out; run `)
-	assert.ErrorContains(t, err, `databricks auth configure-docker --region us-west-2`)
+	assert.ErrorContains(t, err, `docker registry "123.containers.us-west-2.cloud.databricks.com" is logged out`)
+	assert.ErrorContains(t, err, `databricks auth login --host <workspace-url>`)
+	assert.NotContains(t, err.Error(), `databricks auth configure-docker`)
 }
 
 func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
@@ -1173,6 +1192,8 @@ func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
 		},
 	})
 	assert.ErrorContains(t, err, `multiple Databricks profiles are configured for docker registry "123.containers.us-west-2.cloud.databricks.com": first, second`)
+	assert.ErrorContains(t, err, `databricks auth login --host <workspace-url>`)
+	assert.NotContains(t, err.Error(), `databricks auth configure-docker`)
 }
 
 func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
@@ -1185,14 +1206,15 @@ func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
+	assert.ErrorContains(t, err, "docker credential helper requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
 }
 
 func TestResolveDockerProfileTreatsMissingConfigAsNoMatch(t *testing.T) {
 	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", errProfiler{err: profile.ErrNoConfiguration})
-	assert.ErrorContains(t, err, `no Databricks profile is configured for docker registry "123.containers.us-west-2.cloud.databricks.com"; run `)
-	assert.ErrorContains(t, err, `databricks auth configure-docker --region us-west-2`)
+	assert.ErrorContains(t, err, `no Databricks profile is configured for docker registry "123.containers.us-west-2.cloud.databricks.com"`)
+	assert.ErrorContains(t, err, `databricks auth login --host <workspace-url>`)
+	assert.NotContains(t, err.Error(), `databricks auth configure-docker`)
 }
 
 func TestDockerProfileLoginRemedyHasNoTrailingPunctuation(t *testing.T) {

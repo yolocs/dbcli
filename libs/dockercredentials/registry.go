@@ -28,6 +28,12 @@ func RegistryHost(workspaceID, region string) (string, error) {
 	if region == "" {
 		return "", errors.New("region is required")
 	}
+	if strings.Contains(workspaceID, ".") {
+		return "", errors.New("workspace ID must not contain dots")
+	}
+	if strings.Contains(region, ".") {
+		return "", errors.New("region must not contain dots")
+	}
 	return fmt.Sprintf("%s.containers.%s.cloud.databricks.com", workspaceID, region), nil
 }
 
