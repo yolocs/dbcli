@@ -1,6 +1,7 @@
 package dockercredentials
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -155,4 +156,61 @@ func TestLoadBindingInvalidJSON(t *testing.T) {
 
 	_, _, err = LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
 	require.ErrorContains(t, err, "parse Docker credential bindings")
+}
+
+func TestLoadBindingRejectsRegistryHostMismatch(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	writeBindingJSON(t, ctx, `{
+  "registries": {
+    "123.containers.us-west-2.cloud.databricks.com": {
+      "registry_host": "456.containers.us-west-2.cloud.databricks.com",
+      "profile": "dev",
+      "workspace_id": "123",
+      "workspace_host": "https://workspace.test"
+    }
+  }
+}`)
+
+	_, _, err := LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	require.ErrorContains(t, err, `binding for docker registry "123.containers.us-west-2.cloud.databricks.com" contains registry_host "456.containers.us-west-2.cloud.databricks.com"`)
+}
+
+func TestLoadBindingRejectsMissingProfile(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	writeBindingJSON(t, ctx, `{
+  "registries": {
+    "123.containers.us-west-2.cloud.databricks.com": {
+      "registry_host": "123.containers.us-west-2.cloud.databricks.com",
+      "workspace_id": "123",
+      "workspace_host": "https://workspace.test"
+    }
+  }
+}`)
+
+	_, _, err := LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	require.ErrorContains(t, err, `binding for docker registry "123.containers.us-west-2.cloud.databricks.com" is missing profile`)
+}
+
+func TestLoadBindingRejectsMissingWorkspaceHost(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	writeBindingJSON(t, ctx, `{
+  "registries": {
+    "123.containers.us-west-2.cloud.databricks.com": {
+      "registry_host": "123.containers.us-west-2.cloud.databricks.com",
+      "profile": "dev",
+      "workspace_id": "123"
+    }
+  }
+}`)
+
+	_, _, err := LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	require.ErrorContains(t, err, `binding for docker registry "123.containers.us-west-2.cloud.databricks.com" is missing workspace host`)
+}
+
+func writeBindingJSON(t *testing.T, ctx context.Context, raw string) {
+	t.Helper()
+	path, err := BindingPath(ctx)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
 }

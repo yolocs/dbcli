@@ -59,6 +59,17 @@ func TestParseRegistryHostRejectsNonDARHost(t *testing.T) {
 }
 
 func TestParseRegistryHostRejectsMalformedDARHost(t *testing.T) {
-	_, err := ParseRegistryHost("123.containers.us-west-2.extra.cloud.databricks.com")
-	require.ErrorContains(t, err, "is not a Databricks Artifact Registry host")
+	cases := []string{
+		"123.containers.us-west-2.extra.cloud.databricks.com",
+		"123.containers.us-west-2.cloud.databricks.com:443@evil",
+		"123.containers.us-west-2.cloud.databricks.com:not-a-port",
+		"123.containers.us-west-2@evil.cloud.databricks.com",
+		"https://user:pass@123.containers.us-west-2.cloud.databricks.com",
+	}
+	for _, input := range cases {
+		t.Run(input, func(t *testing.T) {
+			_, err := ParseRegistryHost(input)
+			require.ErrorContains(t, err, "is not a Databricks Artifact Registry host")
+		})
+	}
 }

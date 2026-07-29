@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/databricks/cli/libs/cmdio"
 	"github.com/databricks/cli/libs/env"
@@ -18,6 +19,8 @@ const (
 	envLogFile   = "DATABRICKS_LOG_FILE"
 	envLogLevel  = "DATABRICKS_LOG_LEVEL"
 	envLogFormat = "DATABRICKS_LOG_FORMAT"
+
+	cleanStdoutFlagValueAnnotation = "databricks.com/clean-stdout-flag-value"
 )
 
 type logFlags struct {
@@ -72,6 +75,35 @@ func (f *logFlags) initializeContext(ctx context.Context) (context.Context, erro
 
 	slog.SetDefault(slog.New(handler).With(slog.Int("pid", os.Getpid())))
 	return log.NewContext(ctx, slog.Default()), nil
+}
+
+// KeepStdoutCleanForFlagValue marks command modes whose stdout is consumed by
+// another program and must not be mixed with CLI logs.
+func KeepStdoutCleanForFlagValue(cmd *cobra.Command, flagName, flagValue string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[cleanStdoutFlagValueAnnotation] = flagName + "=" + flagValue
+}
+
+func (f *logFlags) keepStdoutClean(cmd *cobra.Command) error {
+	if !commandNeedsCleanStdout(cmd) || f.file.String() != "stdout" {
+		return nil
+	}
+	return f.file.Set("stderr")
+}
+
+func commandNeedsCleanStdout(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Annotations == nil {
+		return false
+	}
+	raw := cmd.Annotations[cleanStdoutFlagValueAnnotation]
+	flagName, flagValue, ok := strings.Cut(raw, "=")
+	if !ok || flagName == "" {
+		return false
+	}
+	flag := cmd.Flag(flagName)
+	return flag != nil && flag.Value.String() == flagValue
 }
 
 func initLogFlags(cmd *cobra.Command) *logFlags {

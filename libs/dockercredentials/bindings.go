@@ -100,7 +100,7 @@ func LoadBinding(ctx context.Context, registryHost string) (Binding, bool, error
 	if err != nil {
 		return Binding{}, false, err
 	}
-	host, err := NormalizeServerAddress(registryHost)
+	registry, err := ParseRegistryHost(registryHost)
 	if err != nil {
 		return Binding{}, false, err
 	}
@@ -108,8 +108,48 @@ func LoadBinding(ctx context.Context, registryHost string) (Binding, bool, error
 	if err != nil {
 		return Binding{}, false, err
 	}
-	binding, ok := file.Registries[host]
-	return binding, ok, nil
+	binding, ok := file.Registries[registry.Host]
+	if !ok {
+		return Binding{}, false, nil
+	}
+	binding, err = validateLoadedBinding(registry, binding)
+	if err != nil {
+		return Binding{}, false, err
+	}
+	return binding, true, nil
+}
+
+func validateLoadedBinding(registry Registry, binding Binding) (Binding, error) {
+	binding.RegistryHost = strings.TrimSpace(binding.RegistryHost)
+	binding.Profile = strings.TrimSpace(binding.Profile)
+	binding.WorkspaceID = strings.TrimSpace(binding.WorkspaceID)
+	binding.WorkspaceHost = strings.TrimSpace(binding.WorkspaceHost)
+
+	bindingRegistry, err := ParseRegistryHost(binding.RegistryHost)
+	if err != nil {
+		return Binding{}, fmt.Errorf("binding for docker registry %q contains invalid registry_host %q: %w", registry.Host, binding.RegistryHost, err)
+	}
+	if bindingRegistry.Host != registry.Host {
+		return Binding{}, fmt.Errorf("binding for docker registry %q contains registry_host %q", registry.Host, bindingRegistry.Host)
+	}
+	if binding.WorkspaceID == "" {
+		return Binding{}, fmt.Errorf("binding for docker registry %q is missing workspace ID", registry.Host)
+	}
+	if binding.WorkspaceID != registry.WorkspaceID {
+		return Binding{}, fmt.Errorf("docker registry %q is bound to workspace %q, but the registry is for workspace %q", registry.Host, binding.WorkspaceID, registry.WorkspaceID)
+	}
+	if binding.Disabled {
+		binding.RegistryHost = registry.Host
+		return binding, nil
+	}
+	if binding.Profile == "" {
+		return Binding{}, fmt.Errorf("binding for docker registry %q is missing profile", registry.Host)
+	}
+	if binding.WorkspaceHost == "" {
+		return Binding{}, fmt.Errorf("binding for docker registry %q is missing workspace host", registry.Host)
+	}
+	binding.RegistryHost = registry.Host
+	return binding, nil
 }
 
 func loadBindingFile(path string) (bindingFile, error) {

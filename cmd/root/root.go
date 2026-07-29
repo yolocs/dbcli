@@ -59,6 +59,10 @@ func New(ctx context.Context) *cobra.Command {
 
 		ctx := cmd.Context()
 
+		if err := logFlags.keepStdoutClean(cmd); err != nil {
+			return err
+		}
+
 		// Configure command IO
 		ctx, err = outputFlag.initializeIO(ctx, cmd)
 		if err != nil {

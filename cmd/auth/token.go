@@ -27,7 +27,10 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const dockerWorkspaceLoginRemedy = "docker credential helper requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`"
+const (
+	dockerWorkspaceLoginRemedy  = "docker credential helper requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`"
+	dockerDisabledBindingRemedy = "remove its entry from ~/.databricks/docker-credential-databricks.json before retrying"
+)
 
 func helpfulError(ctx context.Context, profile string, persistentAuth u2m.OAuthArgument) string {
 	loginMsg := auth.BuildLoginCommand(ctx, profile, persistentAuth)
@@ -56,8 +59,14 @@ and secret is not supported.`,
 	var tokenFormat string
 	cmd.Flags().StringVar(&tokenFormat, "format", "", "Token output format")
 	_ = cmd.Flags().MarkHidden("format")
+	root.KeepStdoutCleanForFlagValue(cmd, "format", "docker")
 
-	cmd.PreRunE = profileHostConflictCheck
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if tokenFormat == "docker" {
+			return rejectDockerTokenFlags(cmd)
+		}
+		return profileHostConflictCheck(cmd, args)
+	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -166,14 +175,6 @@ func dockerTokenLoadArgs(
 	}
 }
 
-func resolveDockerProfile(ctx context.Context, registryHost string, profiler profile.Profiler) (string, error) {
-	registry, err := dockercredentials.ParseRegistryHost(registryHost)
-	if err != nil {
-		return "", err
-	}
-	return resolveDockerRegistryProfile(ctx, registry, profiler)
-}
-
 func resolveDockerRegistryProfile(ctx context.Context, registry dockercredentials.Registry, profiler profile.Profiler) (string, error) {
 	binding, ok, err := dockercredentials.LoadBinding(ctx, registry.Host)
 	if err != nil {
@@ -181,11 +182,14 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 	}
 	if ok {
 		if binding.Disabled {
-			return "", fmt.Errorf("docker registry %q is logged out; %s", registry.Host, dockerWorkspaceLoginRemedy)
+			return "", fmt.Errorf("docker registry %q is logged out; %s", registry.Host, dockerDisabledBindingRemedy)
 		}
 		p, err := loadProfileByName(ctx, binding.Profile, profiler)
 		if err != nil {
 			return "", err
+		}
+		if p == nil {
+			return "", fmt.Errorf("docker registry %q is bound to missing profile %q; %s", registry.Host, binding.Profile, dockerDisabledBindingRemedy)
 		}
 		if err := validateDockerWorkspaceProfile(p); err != nil {
 			return "", err
