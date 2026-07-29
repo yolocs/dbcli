@@ -14,6 +14,10 @@ type ProfileFunc func(context.Context, Registry) (string, error)
 
 const maxProtocolInputBytes = 64 * 1024
 
+// ProtocolOptions contains the streams and callbacks for the Docker credential
+// helper protocol. The get action reads a registry host from In, resolves it to
+// a profile, and writes Docker JSON to Out. Errors are written to both Out and
+// Err so Docker and direct invocations both surface the actionable message.
 type ProtocolOptions struct {
 	In             io.Reader
 	Out            io.Writer
@@ -27,6 +31,9 @@ type credentialGetResponse struct {
 	Secret   string `json:"Secret"`
 }
 
+// HandleProtocol handles Docker credential helper actions: get, store, erase,
+// and list. Store and erase drain bounded input and intentionally persist
+// nothing; list returns an empty JSON object.
 func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) error {
 	switch action {
 	case "get":

@@ -1170,6 +1170,13 @@ func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
 	assert.ErrorContains(t, err, "configure-docker requires a workspace-scoped login; run `databricks auth login --host <workspace-url>`")
 }
 
+func TestResolveDockerProfileTreatsMissingConfigAsNoMatch(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", errProfiler{err: profile.ErrNoConfiguration})
+	assert.ErrorContains(t, err, `no Databricks profile is configured for Docker registry "123.containers.us-west-2.cloud.databricks.com"; run `)
+	assert.ErrorContains(t, err, `databricks auth configure-docker --region us-west-2`)
+}
+
 func TestDockerProfileLoginRemedyHasNoTrailingPunctuation(t *testing.T) {
 	assert.False(t, strings.HasSuffix(dockerWorkspaceLoginRemedy, "."))
 }

@@ -199,7 +199,7 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 	}
 
 	matches, err := profiler.LoadProfiles(ctx, profile.MatchWorkspaceProfiles)
-	if err != nil {
+	if err != nil && !errors.Is(err, profile.ErrNoConfiguration) {
 		return "", err
 	}
 	var names []string
