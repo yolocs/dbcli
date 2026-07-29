@@ -9,10 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/databricks/cli/cmd/root"
 	"github.com/databricks/cli/libs/auth"
 	"github.com/databricks/cli/libs/auth/storage"
+	"github.com/databricks/cli/libs/cmdctx"
 	"github.com/databricks/cli/libs/cmdio"
 	"github.com/databricks/cli/libs/databrickscfg/profile"
+	"github.com/databricks/cli/libs/dockercredentials"
 	"github.com/databricks/cli/libs/env"
 	"github.com/databricks/databricks-sdk-go/credentials/u2m"
 	"github.com/databricks/databricks-sdk-go/httpclient/fixtures"
@@ -907,4 +910,73 @@ func TestWriteTokenOutput(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "my-access-token\n", buf.String())
 	})
+}
+
+func TestTokenCommandDockerFormatRequiresAction(t *testing.T) {
+	ctx := cmdio.MockDiscard(cmdctx.GenerateExecId(t.Context()))
+	cmd := root.New(ctx)
+	cmd.AddCommand(New())
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"auth", "token", "--format=docker"})
+
+	_, err := cmd.ExecuteContextC(ctx)
+	assert.ErrorContains(t, err, "Docker credential helper format requires one action: get, store, erase, or list")
+}
+
+func TestDockerTokenFromProfileUsesForceRefresh(t *testing.T) {
+	args := dockerTokenLoadArgs(
+		"dev",
+		&auth.AuthArguments{},
+		profile.InMemoryProfiler{},
+		&inMemoryStore{},
+		storage.StorageModePlaintext,
+	)
+	assert.Equal(t, "dev", args.profileName)
+	assert.True(t, args.forceRefresh)
+	assert.Empty(t, args.args)
+}
+
+func TestResolveDockerProfileUsesBinding(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://workspace.example.com",
+	})
+	assert.NoError(t, err)
+
+	got, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "dev", got)
+}
+
+func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://workspace.example.com",
+	})
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://workspace.example.com",
+				WorkspaceID: "456",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `profile "dev" is configured for workspace "456", but Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123"`)
 }
