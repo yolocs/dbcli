@@ -119,7 +119,7 @@ func writeProtocolError(out, errOut io.Writer, err error) {
 	if out != nil {
 		_, _ = fmt.Fprintln(out, err)
 	}
-	if errOut != nil && errOut != out {
+	if errOut != nil {
 		_, _ = fmt.Fprintln(errOut, err)
 	}
 }

@@ -18,6 +18,12 @@ func (failWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write failed")
 }
 
+type nonComparableWriter []byte
+
+func (nonComparableWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
 func TestHandleProtocolGet(t *testing.T) {
 	var stdout bytes.Buffer
 	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
@@ -125,6 +131,18 @@ func TestHandleProtocolUnknownAction(t *testing.T) {
 	})
 	require.ErrorContains(t, err, `unsupported Docker credential helper action "bad"`)
 	require.Contains(t, stdout.String(), `unsupported Docker credential helper action "bad"`)
+}
+
+func TestHandleProtocolErrorDoesNotCompareWriters(t *testing.T) {
+	w := nonComparableWriter{}
+	require.NotPanics(t, func() {
+		err := HandleProtocol(context.Background(), "bad", ProtocolOptions{
+			In:  &bytes.Buffer{},
+			Out: w,
+			Err: w,
+		})
+		require.ErrorContains(t, err, `unsupported Docker credential helper action "bad"`)
+	})
 }
 
 func TestHandleProtocolGetResolveError(t *testing.T) {
