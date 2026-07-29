@@ -26,7 +26,7 @@ func (nonComparableWriter) Write(p []byte) (int, error) {
 
 func TestHandleProtocolGet(t *testing.T) {
 	var stdout bytes.Buffer
-	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &stdout,
 		Err: &bytes.Buffer{},
@@ -51,7 +51,7 @@ func TestHandleProtocolStoreEraseNoop(t *testing.T) {
 	for _, action := range []string{"store", "erase"} {
 		t.Run(action, func(t *testing.T) {
 			var stdout bytes.Buffer
-			err := HandleProtocol(context.Background(), action, ProtocolOptions{
+			err := HandleProtocol(t.Context(), action, ProtocolOptions{
 				In:  bytes.NewBufferString(`{"ServerURL":"123.containers.us-west-2.cloud.databricks.com"}`),
 				Out: &stdout,
 				Err: &bytes.Buffer{},
@@ -64,7 +64,7 @@ func TestHandleProtocolStoreEraseNoop(t *testing.T) {
 
 func TestHandleProtocolList(t *testing.T) {
 	var stdout bytes.Buffer
-	err := HandleProtocol(context.Background(), "list", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "list", ProtocolOptions{
 		In:  &bytes.Buffer{},
 		Out: &stdout,
 		Err: &bytes.Buffer{},
@@ -75,7 +75,7 @@ func TestHandleProtocolList(t *testing.T) {
 
 func TestHandleProtocolListWriteErrorIsPrinted(t *testing.T) {
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "list", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "list", ProtocolOptions{
 		In:  &bytes.Buffer{},
 		Out: failWriter{},
 		Err: &stderr,
@@ -86,7 +86,7 @@ func TestHandleProtocolListWriteErrorIsPrinted(t *testing.T) {
 
 func TestHandleProtocolGetWriteErrorIsPrinted(t *testing.T) {
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: failWriter{},
 		Err: &stderr,
@@ -104,7 +104,7 @@ func TestHandleProtocolGetWriteErrorIsPrinted(t *testing.T) {
 func TestHandleProtocolStoreReadErrorIsPrinted(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "store", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "store", ProtocolOptions{
 		In:  errorReader{},
 		Out: &stdout,
 		Err: &stderr,
@@ -124,7 +124,7 @@ var _ io.Reader = errorReader{}
 
 func TestHandleProtocolUnknownAction(t *testing.T) {
 	var stdout bytes.Buffer
-	err := HandleProtocol(context.Background(), "bad", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "bad", ProtocolOptions{
 		In:  &bytes.Buffer{},
 		Out: &stdout,
 		Err: &bytes.Buffer{},
@@ -136,7 +136,7 @@ func TestHandleProtocolUnknownAction(t *testing.T) {
 func TestHandleProtocolErrorDoesNotCompareWriters(t *testing.T) {
 	w := nonComparableWriter{}
 	require.NotPanics(t, func() {
-		err := HandleProtocol(context.Background(), "bad", ProtocolOptions{
+		err := HandleProtocol(t.Context(), "bad", ProtocolOptions{
 			In:  &bytes.Buffer{},
 			Out: w,
 			Err: w,
@@ -148,7 +148,7 @@ func TestHandleProtocolErrorDoesNotCompareWriters(t *testing.T) {
 func TestHandleProtocolGetResolveError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &stdout,
 		Err: &stderr,
@@ -164,7 +164,7 @@ func TestHandleProtocolGetResolveError(t *testing.T) {
 func TestHandleProtocolGetTokenError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
 		Out: &stdout,
 		Err: &stderr,
@@ -183,21 +183,21 @@ func TestHandleProtocolGetTokenError(t *testing.T) {
 func TestHandleProtocolGetRejectsLargeInput(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "get", ProtocolOptions{
 		In:  strings.NewReader(strings.Repeat("a", maxProtocolInputBytes+1)),
 		Out: &stdout,
 		Err: &stderr,
 	})
-	require.ErrorContains(t, err, "Docker credential helper input is too large")
-	require.Contains(t, stdout.String(), "Docker credential helper input is too large")
-	require.Contains(t, stderr.String(), "Docker credential helper input is too large")
+	require.ErrorContains(t, err, "docker credential helper input is too large")
+	require.Contains(t, stdout.String(), "docker credential helper input is too large")
+	require.Contains(t, stderr.String(), "docker credential helper input is too large")
 }
 
 func TestHandleProtocolStoreRejectsLargeInput(t *testing.T) {
-	err := HandleProtocol(context.Background(), "store", ProtocolOptions{
+	err := HandleProtocol(t.Context(), "store", ProtocolOptions{
 		In:  strings.NewReader(strings.Repeat("a", maxProtocolInputBytes+1)),
 		Out: &bytes.Buffer{},
 		Err: &bytes.Buffer{},
 	})
-	require.ErrorContains(t, err, "Docker credential helper input is too large")
+	require.ErrorContains(t, err, "docker credential helper input is too large")
 }

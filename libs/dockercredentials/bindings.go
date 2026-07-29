@@ -54,7 +54,7 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 		return err
 	}
 	if binding.WorkspaceID != registry.WorkspaceID {
-		return fmt.Errorf("Docker registry %q is for workspace %q, not %q", registry.Host, registry.WorkspaceID, binding.WorkspaceID)
+		return fmt.Errorf("docker registry %q is for workspace %q, not %q", registry.Host, registry.WorkspaceID, binding.WorkspaceID)
 	}
 	binding.RegistryHost = registry.Host
 

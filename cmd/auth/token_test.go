@@ -923,7 +923,7 @@ func TestTokenCommandDockerFormatRequiresAction(t *testing.T) {
 	cmd.SetArgs([]string{"auth", "token", "--format=docker"})
 
 	_, err := cmd.ExecuteContextC(ctx)
-	assert.ErrorContains(t, err, "Docker credential helper format requires one action: get, store, erase, or list")
+	assert.ErrorContains(t, err, "docker credential helper format requires one action: get, store, erase, or list")
 }
 
 func TestTokenCommandDockerListDoesNotResolveTokenStore(t *testing.T) {
@@ -1032,7 +1032,7 @@ func TestResolveDockerProfileRejectsBindingWorkspaceIDMismatch(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `Docker registry "123.containers.us-west-2.cloud.databricks.com" is bound to workspace "456", but the registry is for workspace "123"`)
+	assert.ErrorContains(t, err, `docker registry "123.containers.us-west-2.cloud.databricks.com" is bound to workspace "456", but the registry is for workspace "123"`)
 }
 
 func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
@@ -1054,7 +1054,7 @@ func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `profile "dev" is configured for workspace "456", but Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123"`)
+	assert.ErrorContains(t, err, `profile "dev" is configured for workspace "456", but docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123"`)
 }
 
 func TestResolveDockerProfileRejectsBindingHostMismatchWithWorkspaceID(t *testing.T) {
@@ -1076,7 +1076,7 @@ func TestResolveDockerProfileRejectsBindingHostMismatchWithWorkspaceID(t *testin
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
+	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
 }
 
 func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *testing.T) {
@@ -1097,7 +1097,7 @@ func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *tes
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
+	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
 }
 
 func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
@@ -1154,7 +1154,7 @@ func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `multiple Databricks profiles are configured for Docker registry "123.containers.us-west-2.cloud.databricks.com": first, second`)
+	assert.ErrorContains(t, err, `multiple Databricks profiles are configured for docker registry "123.containers.us-west-2.cloud.databricks.com": first, second`)
 }
 
 func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
@@ -1173,7 +1173,7 @@ func TestResolveDockerProfileRejectsHostlessWorkspaceIDFallback(t *testing.T) {
 func TestResolveDockerProfileTreatsMissingConfigAsNoMatch(t *testing.T) {
 	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", errProfiler{err: profile.ErrNoConfiguration})
-	assert.ErrorContains(t, err, `no Databricks profile is configured for Docker registry "123.containers.us-west-2.cloud.databricks.com"; run `)
+	assert.ErrorContains(t, err, `no Databricks profile is configured for docker registry "123.containers.us-west-2.cloud.databricks.com"; run `)
 	assert.ErrorContains(t, err, `databricks auth configure-docker --region us-west-2`)
 }
 

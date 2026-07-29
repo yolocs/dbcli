@@ -105,7 +105,7 @@ func runDockerTokenCommand(ctx context.Context, cmd *cobra.Command, args []strin
 		return err
 	}
 	if len(args) != 1 {
-		return errors.New("Docker credential helper format requires one action: get, store, erase, or list")
+		return errors.New("docker credential helper format requires one action: get, store, erase, or list")
 	}
 	err := dockercredentials.HandleProtocol(ctx, args[0], dockercredentials.ProtocolOptions{
 		In:  cmd.InOrStdin(),
@@ -185,15 +185,15 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 			return "", err
 		}
 		if binding.WorkspaceID != registry.WorkspaceID {
-			return "", fmt.Errorf("Docker registry %q is bound to workspace %q, but the registry is for workspace %q", registry.Host, binding.WorkspaceID, registry.WorkspaceID)
+			return "", fmt.Errorf("docker registry %q is bound to workspace %q, but the registry is for workspace %q", registry.Host, binding.WorkspaceID, registry.WorkspaceID)
 		}
 		if p.WorkspaceID != "" && p.WorkspaceID != auth.WorkspaceIDNone && p.WorkspaceID != registry.WorkspaceID {
-			return "", fmt.Errorf("profile %q is configured for workspace %q, but Docker registry %q is for workspace %q", binding.Profile, p.WorkspaceID, registry.Host, registry.WorkspaceID)
+			return "", fmt.Errorf("profile %q is configured for workspace %q, but docker registry %q is for workspace %q", binding.Profile, p.WorkspaceID, registry.Host, registry.WorkspaceID)
 		}
 		profileHost := sdkCanonicalHost(p.Host)
 		bindingHost := sdkCanonicalHost(binding.WorkspaceHost)
 		if bindingHost == "" || profileHost != bindingHost {
-			return "", fmt.Errorf("profile %q points to %q, but Docker registry %q was configured with %q", binding.Profile, p.Host, registry.Host, binding.WorkspaceHost)
+			return "", fmt.Errorf("profile %q points to %q, but docker registry %q was configured with %q", binding.Profile, p.Host, registry.Host, binding.WorkspaceHost)
 		}
 		return binding.Profile, nil
 	}
@@ -219,9 +219,9 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 		return names[0], nil
 	}
 	if len(names) > 1 {
-		return "", fmt.Errorf("multiple Databricks profiles are configured for Docker registry %q: %s; run `databricks auth configure-docker --region %s`", registry.Host, strings.Join(names, ", "), registry.Region)
+		return "", fmt.Errorf("multiple Databricks profiles are configured for docker registry %q: %s; run `databricks auth configure-docker --region %s`", registry.Host, strings.Join(names, ", "), registry.Region)
 	}
-	return "", fmt.Errorf("no Databricks profile is configured for Docker registry %q; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
+	return "", fmt.Errorf("no Databricks profile is configured for docker registry %q; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
 }
 
 func validateDockerWorkspaceProfile(p *profile.Profile) error {

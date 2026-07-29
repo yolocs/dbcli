@@ -64,7 +64,7 @@ func handleGet(ctx context.Context, opts ProtocolOptions) error {
 		return err
 	}
 	if opts.ResolveProfile == nil {
-		err := errors.New("Docker credential profile resolver is not configured")
+		err := errors.New("docker credential profile resolver is not configured")
 		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
@@ -79,7 +79,7 @@ func handleGet(ctx context.Context, opts ProtocolOptions) error {
 		return err
 	}
 	if opts.Token == nil {
-		err := errors.New("Docker credential token source is not configured")
+		err := errors.New("docker credential token source is not configured")
 		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
@@ -107,7 +107,7 @@ func readProtocolInput(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	if len(raw) > maxProtocolInputBytes {
-		return nil, errors.New("Docker credential helper input is too large")
+		return nil, errors.New("docker credential helper input is too large")
 	}
 	return raw, nil
 }

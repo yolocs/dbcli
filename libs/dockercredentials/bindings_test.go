@@ -1,7 +1,6 @@
 package dockercredentials
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestSaveAndLoadBinding(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	binding := Binding{
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
@@ -32,7 +31,7 @@ func TestSaveBindingFileMode(t *testing.T) {
 		t.Skip("Windows does not preserve Unix permission bits")
 	}
 
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	require.NoError(t, SaveBinding(ctx, Binding{
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
@@ -48,7 +47,7 @@ func TestSaveBindingFileMode(t *testing.T) {
 }
 
 func TestSaveBindingRejectsMissingMetadata(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 
 	err := SaveBinding(ctx, Binding{
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
@@ -59,7 +58,7 @@ func TestSaveBindingRejectsMissingMetadata(t *testing.T) {
 }
 
 func TestSaveBindingRejectsWorkspaceIDMismatch(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 
 	err := SaveBinding(ctx, Binding{
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
@@ -67,11 +66,11 @@ func TestSaveBindingRejectsWorkspaceIDMismatch(t *testing.T) {
 		WorkspaceID:   "456",
 		WorkspaceHost: "https://workspace.test",
 	})
-	require.ErrorContains(t, err, `Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123", not "456"`)
+	require.ErrorContains(t, err, `docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123", not "456"`)
 }
 
 func TestLoadBindingMissingFile(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	_, ok, err := LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -79,14 +78,14 @@ func TestLoadBindingMissingFile(t *testing.T) {
 
 func TestBindingPath(t *testing.T) {
 	home := t.TempDir()
-	ctx := env.WithUserHomeDir(context.Background(), home)
+	ctx := env.WithUserHomeDir(t.Context(), home)
 	got, err := BindingPath(ctx)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, ".databricks", "docker-credential-databricks.json"), got)
 }
 
 func TestSaveBindingPreservesExistingRegistries(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	first := Binding{
 		RegistryHost:  "111.containers.us-west-2.cloud.databricks.com",
 		Profile:       "first",
@@ -115,7 +114,7 @@ func TestSaveBindingPreservesExistingRegistries(t *testing.T) {
 }
 
 func TestLoadBindingInvalidJSON(t *testing.T) {
-	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	path, err := BindingPath(ctx)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
