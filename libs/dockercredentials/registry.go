@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -68,7 +69,7 @@ func NormalizeServerAddress(raw string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("parse server address %q: %w", raw, err)
 		}
-		if !isNumericPort(port) {
+		if !isValidPort(port) {
 			return "", fmt.Errorf("server address port %q is invalid", port)
 		}
 		value = host
@@ -97,16 +98,12 @@ func ParseRegistryHost(raw string) (Registry, error) {
 	return Registry{WorkspaceID: workspaceID, Region: region, Host: host}, nil
 }
 
-func isNumericPort(port string) bool {
-	if port == "" {
+func isValidPort(port string) bool {
+	value, err := strconv.Atoi(port)
+	if err != nil {
 		return false
 	}
-	for _, ch := range port {
-		if ch < '0' || ch > '9' {
-			return false
-		}
-	}
-	return true
+	return value > 0 && value <= 65535
 }
 
 func isDNSLabel(label string) bool {

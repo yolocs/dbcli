@@ -63,6 +63,7 @@ func TestParseRegistryHostRejectsMalformedDARHost(t *testing.T) {
 		"123.containers.us-west-2.extra.cloud.databricks.com",
 		"123.containers.us-west-2.cloud.databricks.com:443@evil",
 		"123.containers.us-west-2.cloud.databricks.com:not-a-port",
+		"123.containers.us-west-2.cloud.databricks.com:99999",
 		"123.containers.us-west-2@evil.cloud.databricks.com",
 		"https://user:pass@123.containers.us-west-2.cloud.databricks.com",
 	}
