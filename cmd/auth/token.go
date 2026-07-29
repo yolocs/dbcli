@@ -190,12 +190,10 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 		if p.WorkspaceID != "" && p.WorkspaceID != auth.WorkspaceIDNone && p.WorkspaceID != registry.WorkspaceID {
 			return "", fmt.Errorf("profile %q is configured for workspace %q, but Docker registry %q is for workspace %q", binding.Profile, p.WorkspaceID, registry.Host, registry.WorkspaceID)
 		}
-		if p.WorkspaceID == "" || p.WorkspaceID == auth.WorkspaceIDNone {
-			profileHost := sdkCanonicalHost(p.Host)
-			bindingHost := sdkCanonicalHost(binding.WorkspaceHost)
-			if bindingHost == "" || profileHost != bindingHost {
-				return "", fmt.Errorf("profile %q points to %q, but Docker registry %q was configured with %q", binding.Profile, p.Host, registry.Host, binding.WorkspaceHost)
-			}
+		profileHost := sdkCanonicalHost(p.Host)
+		bindingHost := sdkCanonicalHost(binding.WorkspaceHost)
+		if bindingHost == "" || profileHost != bindingHost {
+			return "", fmt.Errorf("profile %q points to %q, but Docker registry %q was configured with %q", binding.Profile, p.Host, registry.Host, binding.WorkspaceHost)
 		}
 		return binding.Profile, nil
 	}

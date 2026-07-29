@@ -34,14 +34,18 @@ func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) er
 	case "store", "erase":
 		_, err := readProtocolInput(opts.In)
 		if err != nil {
-			writeProtocolError(opts.Err, err)
+			writeProtocolError(opts.Out, opts.Err, err)
 		}
 		return err
 	case "list":
-		return json.NewEncoder(opts.Out).Encode(map[string]string{})
+		err := json.NewEncoder(opts.Out).Encode(map[string]string{})
+		if err != nil {
+			writeProtocolError(opts.Out, opts.Err, err)
+		}
+		return err
 	default:
 		err := fmt.Errorf("unsupported Docker credential helper action %q", action)
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 }
@@ -49,38 +53,42 @@ func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) er
 func handleGet(ctx context.Context, opts ProtocolOptions) error {
 	raw, err := readProtocolInput(opts.In)
 	if err != nil {
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 	if opts.ResolveProfile == nil {
 		err := errors.New("Docker credential profile resolver is not configured")
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 	registry, err := ParseRegistryHost(string(raw))
 	if err != nil {
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 	profileName, err := opts.ResolveProfile(ctx, registry)
 	if err != nil {
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 	if opts.Token == nil {
 		err := errors.New("Docker credential token source is not configured")
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
 	token, err := opts.Token(ctx, profileName)
 	if err != nil {
-		writeProtocolError(opts.Err, err)
+		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
-	return json.NewEncoder(opts.Out).Encode(credentialGetResponse{
+	err = json.NewEncoder(opts.Out).Encode(credentialGetResponse{
 		Username: OAuthTokenUsername,
 		Secret:   token,
 	})
+	if err != nil {
+		writeProtocolError(opts.Out, opts.Err, err)
+	}
+	return err
 }
 
 func readProtocolInput(r io.Reader) ([]byte, error) {
@@ -97,9 +105,14 @@ func readProtocolInput(r io.Reader) ([]byte, error) {
 	return raw, nil
 }
 
-func writeProtocolError(w io.Writer, err error) {
-	if w == nil || err == nil {
+func writeProtocolError(out, errOut io.Writer, err error) {
+	if err == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(w, err)
+	if out != nil {
+		_, _ = fmt.Fprintln(out, err)
+	}
+	if errOut != nil && errOut != out {
+		_, _ = fmt.Fprintln(errOut, err)
+	}
 }

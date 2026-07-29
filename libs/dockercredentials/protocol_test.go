@@ -5,11 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
 
 func TestHandleProtocolGet(t *testing.T) {
 	var stdout bytes.Buffer
@@ -60,34 +67,88 @@ func TestHandleProtocolList(t *testing.T) {
 	require.JSONEq(t, `{}`, stdout.String())
 }
 
-func TestHandleProtocolUnknownAction(t *testing.T) {
-	err := HandleProtocol(context.Background(), "bad", ProtocolOptions{
+func TestHandleProtocolListWriteErrorIsPrinted(t *testing.T) {
+	var stderr bytes.Buffer
+	err := HandleProtocol(context.Background(), "list", ProtocolOptions{
 		In:  &bytes.Buffer{},
-		Out: &bytes.Buffer{},
-		Err: &bytes.Buffer{},
+		Out: failWriter{},
+		Err: &stderr,
 	})
-	require.ErrorContains(t, err, `unsupported Docker credential helper action "bad"`)
+	require.ErrorContains(t, err, "write failed")
+	require.Contains(t, stderr.String(), "write failed")
 }
 
-func TestHandleProtocolGetResolveError(t *testing.T) {
+func TestHandleProtocolGetWriteErrorIsPrinted(t *testing.T) {
 	var stderr bytes.Buffer
 	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
-		Out: &bytes.Buffer{},
+		Out: failWriter{},
+		Err: &stderr,
+		ResolveProfile: func(context.Context, Registry) (string, error) {
+			return "dev", nil
+		},
+		Token: func(context.Context, string) (string, error) {
+			return "access-token", nil
+		},
+	})
+	require.ErrorContains(t, err, "write failed")
+	require.Contains(t, stderr.String(), "write failed")
+}
+
+func TestHandleProtocolStoreReadErrorIsPrinted(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := HandleProtocol(context.Background(), "store", ProtocolOptions{
+		In:  errorReader{},
+		Out: &stdout,
+		Err: &stderr,
+	})
+	require.ErrorContains(t, err, "read failed")
+	require.Contains(t, stdout.String(), "read failed")
+	require.Contains(t, stderr.String(), "read failed")
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("read failed")
+}
+
+var _ io.Reader = errorReader{}
+
+func TestHandleProtocolUnknownAction(t *testing.T) {
+	var stdout bytes.Buffer
+	err := HandleProtocol(context.Background(), "bad", ProtocolOptions{
+		In:  &bytes.Buffer{},
+		Out: &stdout,
+		Err: &bytes.Buffer{},
+	})
+	require.ErrorContains(t, err, `unsupported Docker credential helper action "bad"`)
+	require.Contains(t, stdout.String(), `unsupported Docker credential helper action "bad"`)
+}
+
+func TestHandleProtocolGetResolveError(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
+		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
+		Out: &stdout,
 		Err: &stderr,
 		ResolveProfile: func(context.Context, Registry) (string, error) {
 			return "", errors.New("registry is not configured")
 		},
 	})
 	require.ErrorContains(t, err, "registry is not configured")
+	require.Contains(t, stdout.String(), "registry is not configured")
 	require.Contains(t, stderr.String(), "registry is not configured")
 }
 
 func TestHandleProtocolGetTokenError(t *testing.T) {
+	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
 		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
-		Out: &bytes.Buffer{},
+		Out: &stdout,
 		Err: &stderr,
 		ResolveProfile: func(context.Context, Registry) (string, error) {
 			return "dev", nil
@@ -97,17 +158,20 @@ func TestHandleProtocolGetTokenError(t *testing.T) {
 		},
 	})
 	require.ErrorContains(t, err, "token expired")
+	require.Contains(t, stdout.String(), "token expired")
 	require.Contains(t, stderr.String(), "token expired")
 }
 
 func TestHandleProtocolGetRejectsLargeInput(t *testing.T) {
+	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	err := HandleProtocol(context.Background(), "get", ProtocolOptions{
 		In:  strings.NewReader(strings.Repeat("a", maxProtocolInputBytes+1)),
-		Out: &bytes.Buffer{},
+		Out: &stdout,
 		Err: &stderr,
 	})
 	require.ErrorContains(t, err, "Docker credential helper input is too large")
+	require.Contains(t, stdout.String(), "Docker credential helper input is too large")
 	require.Contains(t, stderr.String(), "Docker credential helper input is too large")
 }
 

@@ -17,7 +17,7 @@ func TestSaveAndLoadBinding(t *testing.T) {
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://workspace.example.com",
+		WorkspaceHost: "https://workspace.test",
 	}
 
 	require.NoError(t, SaveBinding(ctx, binding))
@@ -37,7 +37,7 @@ func TestSaveBindingFileMode(t *testing.T) {
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://workspace.example.com",
+		WorkspaceHost: "https://workspace.test",
 	}))
 
 	path, err := BindingPath(ctx)
@@ -53,9 +53,21 @@ func TestSaveBindingRejectsMissingMetadata(t *testing.T) {
 	err := SaveBinding(ctx, Binding{
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
-		WorkspaceHost: "https://workspace.example.com",
+		WorkspaceHost: "https://workspace.test",
 	})
 	require.ErrorContains(t, err, "workspace ID is required")
+}
+
+func TestSaveBindingRejectsWorkspaceIDMismatch(t *testing.T) {
+	ctx := env.WithUserHomeDir(context.Background(), t.TempDir())
+
+	err := SaveBinding(ctx, Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "456",
+		WorkspaceHost: "https://workspace.test",
+	})
+	require.ErrorContains(t, err, `Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123", not "456"`)
 }
 
 func TestLoadBindingMissingFile(t *testing.T) {
@@ -79,13 +91,13 @@ func TestSaveBindingPreservesExistingRegistries(t *testing.T) {
 		RegistryHost:  "111.containers.us-west-2.cloud.databricks.com",
 		Profile:       "first",
 		WorkspaceID:   "111",
-		WorkspaceHost: "https://first.example.com",
+		WorkspaceHost: "https://first.test",
 	}
 	second := Binding{
 		RegistryHost:  "222.containers.us-east-1.cloud.databricks.com",
 		Profile:       "second",
 		WorkspaceID:   "222",
-		WorkspaceHost: "https://second.example.com",
+		WorkspaceHost: "https://second.test",
 	}
 
 	require.NoError(t, SaveBinding(ctx, first))

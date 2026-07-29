@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -946,7 +948,7 @@ func TestTokenCommandDockerFormatRejectsIncompatibleFlags(t *testing.T) {
 		flag string
 	}{
 		{"profile", []string{"auth", "token", "--profile", "dev", "--format=docker", "list"}, "--profile"},
-		{"host", []string{"auth", "--host", "https://workspace.example.com", "token", "--format=docker", "list"}, "--host"},
+		{"host", []string{"auth", "--host", "https://workspace.test", "token", "--format=docker", "list"}, "--host"},
 		{"account ID", []string{"auth", "--account-id", "abc", "token", "--format=docker", "list"}, "--account-id"},
 		{"workspace ID", []string{"auth", "--workspace-id", "123", "token", "--format=docker", "list"}, "--workspace-id"},
 		{"force refresh", []string{"auth", "token", "--force-refresh", "--format=docker", "list"}, "--force-refresh"},
@@ -986,7 +988,7 @@ func TestResolveDockerProfileUsesBinding(t *testing.T) {
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://workspace.example.com",
+		WorkspaceHost: "https://workspace.test",
 	})
 	assert.NoError(t, err)
 
@@ -994,7 +996,7 @@ func TestResolveDockerProfileUsesBinding(t *testing.T) {
 		Profiles: profile.Profiles{
 			{
 				Name:        "dev",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "123",
 			},
 		},
@@ -1005,19 +1007,27 @@ func TestResolveDockerProfileUsesBinding(t *testing.T) {
 
 func TestResolveDockerProfileRejectsBindingWorkspaceIDMismatch(t *testing.T) {
 	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
-	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
-		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
-		Profile:       "dev",
-		WorkspaceID:   "456",
-		WorkspaceHost: "https://workspace.example.com",
-	})
+	path, err := dockercredentials.BindingPath(ctx)
+	assert.NoError(t, err)
+	err = os.MkdirAll(filepath.Dir(path), 0o700)
+	assert.NoError(t, err)
+	err = os.WriteFile(path, []byte(`{
+  "registries": {
+    "123.containers.us-west-2.cloud.databricks.com": {
+      "registry_host": "123.containers.us-west-2.cloud.databricks.com",
+      "profile": "dev",
+      "workspace_id": "456",
+      "workspace_host": "https://workspace.test"
+    }
+  }
+}`), 0o600)
 	assert.NoError(t, err)
 
 	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
 		Profiles: profile.Profiles{
 			{
 				Name:        "dev",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "123",
 			},
 		},
@@ -1031,7 +1041,7 @@ func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://workspace.example.com",
+		WorkspaceHost: "https://workspace.test",
 	})
 	assert.NoError(t, err)
 
@@ -1039,12 +1049,34 @@ func TestResolveDockerProfileRejectsBindingWorkspaceMismatch(t *testing.T) {
 		Profiles: profile.Profiles{
 			{
 				Name:        "dev",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "456",
 			},
 		},
 	})
 	assert.ErrorContains(t, err, `profile "dev" is configured for workspace "456", but Docker registry "123.containers.us-west-2.cloud.databricks.com" is for workspace "123"`)
+}
+
+func TestResolveDockerProfileRejectsBindingHostMismatchWithWorkspaceID(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.SaveBinding(ctx, dockercredentials.Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://old-workspace.test",
+	})
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://new-workspace.test",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
 }
 
 func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *testing.T) {
@@ -1053,7 +1085,7 @@ func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *tes
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://old-workspace.example.com",
+		WorkspaceHost: "https://old-workspace.test",
 	})
 	assert.NoError(t, err)
 
@@ -1061,11 +1093,11 @@ func TestResolveDockerProfileRejectsBindingHostMismatchWithoutWorkspaceID(t *tes
 		Profiles: profile.Profiles{
 			{
 				Name: "dev",
-				Host: "https://new-workspace.example.com",
+				Host: "https://new-workspace.test",
 			},
 		},
 	})
-	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.example.com", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.example.com"`)
+	assert.ErrorContains(t, err, `profile "dev" points to "https://new-workspace.test", but Docker registry "123.containers.us-west-2.cloud.databricks.com" was configured with "https://old-workspace.test"`)
 }
 
 func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
@@ -1074,7 +1106,7 @@ func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
 		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
 		Profile:       "dev",
 		WorkspaceID:   "123",
-		WorkspaceHost: "https://accounts.cloud.databricks.com",
+		WorkspaceHost: "https://accounts.test",
 	})
 	assert.NoError(t, err)
 
@@ -1082,7 +1114,7 @@ func TestResolveDockerProfileRejectsClassicAccountHost(t *testing.T) {
 		Profiles: profile.Profiles{
 			{
 				Name:        "dev",
-				Host:        "https://accounts.cloud.databricks.com",
+				Host:        "https://accounts.test",
 				AccountID:   "abc",
 				WorkspaceID: "123",
 			},
@@ -1097,7 +1129,7 @@ func TestResolveDockerProfileUsesUniqueWorkspaceIDFallback(t *testing.T) {
 		Profiles: profile.Profiles{
 			{
 				Name:        "dev",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "123",
 			},
 		},
@@ -1112,12 +1144,12 @@ func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
 		Profiles: profile.Profiles{
 			{
 				Name:        "first",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "123",
 			},
 			{
 				Name:        "second",
-				Host:        "https://workspace.example.com",
+				Host:        "https://workspace.test",
 				WorkspaceID: "123",
 			},
 		},

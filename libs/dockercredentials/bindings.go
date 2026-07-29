@@ -49,11 +49,14 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 	if binding.WorkspaceHost == "" {
 		return errors.New("workspace host is required")
 	}
-	host, err := NormalizeServerAddress(binding.RegistryHost)
+	registry, err := ParseRegistryHost(binding.RegistryHost)
 	if err != nil {
 		return err
 	}
-	binding.RegistryHost = host
+	if binding.WorkspaceID != registry.WorkspaceID {
+		return fmt.Errorf("Docker registry %q is for workspace %q, not %q", registry.Host, registry.WorkspaceID, binding.WorkspaceID)
+	}
+	binding.RegistryHost = registry.Host
 
 	file, err := loadBindingFile(path)
 	if err != nil {
@@ -62,7 +65,7 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 	if file.Registries == nil {
 		file.Registries = map[string]Binding{}
 	}
-	file.Registries[host] = binding
+	file.Registries[registry.Host] = binding
 	return writeBindingFile(path, file)
 }
 
