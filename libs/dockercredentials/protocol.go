@@ -12,6 +12,8 @@ type TokenFunc func(context.Context, string) (string, error)
 
 type ProfileFunc func(context.Context, Registry) (string, error)
 
+type EraseFunc func(context.Context, Registry) error
+
 const maxProtocolInputBytes = 64 * 1024
 
 // ProtocolOptions contains the streams and callbacks for the Docker credential
@@ -24,6 +26,7 @@ type ProtocolOptions struct {
 	Err            io.Writer
 	ResolveProfile ProfileFunc
 	Token          TokenFunc
+	Erase          EraseFunc
 }
 
 type credentialGetResponse struct {
@@ -32,18 +35,20 @@ type credentialGetResponse struct {
 }
 
 // HandleProtocol handles Docker credential helper actions: get, store, erase,
-// and list. Store and erase drain bounded input and intentionally persist
-// nothing; list returns an empty JSON object.
+// and list. Store drains bounded input and intentionally persists nothing; list
+// returns an empty JSON object.
 func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) error {
 	switch action {
 	case "get":
 		return handleGet(ctx, opts)
-	case "store", "erase":
+	case "store":
 		_, err := readProtocolInput(opts.In)
 		if err != nil {
 			writeProtocolError(opts.Out, opts.Err, err)
 		}
 		return err
+	case "erase":
+		return handleErase(ctx, opts)
 	case "list":
 		err := json.NewEncoder(opts.Out).Encode(map[string]string{})
 		if err != nil {
@@ -55,6 +60,27 @@ func HandleProtocol(ctx context.Context, action string, opts ProtocolOptions) er
 		writeProtocolError(opts.Out, opts.Err, err)
 		return err
 	}
+}
+
+func handleErase(ctx context.Context, opts ProtocolOptions) error {
+	raw, err := readProtocolInput(opts.In)
+	if err != nil {
+		writeProtocolError(opts.Out, opts.Err, err)
+		return err
+	}
+	if opts.Erase == nil {
+		return nil
+	}
+	registry, err := ParseRegistryHost(string(raw))
+	if err != nil {
+		writeProtocolError(opts.Out, opts.Err, err)
+		return err
+	}
+	err = opts.Erase(ctx, registry)
+	if err != nil {
+		writeProtocolError(opts.Out, opts.Err, err)
+	}
+	return err
 }
 
 func handleGet(ctx context.Context, opts ProtocolOptions) error {

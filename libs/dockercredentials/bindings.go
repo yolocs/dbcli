@@ -18,6 +18,7 @@ type Binding struct {
 	Profile       string `json:"profile"`
 	WorkspaceID   string `json:"workspace_id"`
 	WorkspaceHost string `json:"workspace_host"`
+	Disabled      bool   `json:"disabled,omitempty"`
 }
 
 type bindingFile struct {
@@ -40,6 +41,7 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 	binding.Profile = strings.TrimSpace(binding.Profile)
 	binding.WorkspaceID = strings.TrimSpace(binding.WorkspaceID)
 	binding.WorkspaceHost = strings.TrimSpace(binding.WorkspaceHost)
+	binding.Disabled = false
 	if binding.Profile == "" {
 		return errors.New("profile is required")
 	}
@@ -66,6 +68,30 @@ func SaveBinding(ctx context.Context, binding Binding) error {
 		file.Registries = map[string]Binding{}
 	}
 	file.Registries[registry.Host] = binding
+	return writeBindingFile(path, file)
+}
+
+func DisableBinding(ctx context.Context, registryHost string) error {
+	path, err := BindingPath(ctx)
+	if err != nil {
+		return err
+	}
+	registry, err := ParseRegistryHost(registryHost)
+	if err != nil {
+		return err
+	}
+	file, err := loadBindingFile(path)
+	if err != nil {
+		return err
+	}
+	if file.Registries == nil {
+		file.Registries = map[string]Binding{}
+	}
+	file.Registries[registry.Host] = Binding{
+		RegistryHost: registry.Host,
+		WorkspaceID:  registry.WorkspaceID,
+		Disabled:     true,
+	}
 	return writeBindingFile(path, file)
 }
 

@@ -1138,6 +1138,24 @@ func TestResolveDockerProfileUsesUniqueWorkspaceIDFallback(t *testing.T) {
 	assert.Equal(t, "dev", got)
 }
 
+func TestResolveDockerProfileRejectsDisabledBinding(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := dockercredentials.DisableBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	assert.NoError(t, err)
+
+	_, err = resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{
+		Profiles: profile.Profiles{
+			{
+				Name:        "dev",
+				Host:        "https://workspace.test",
+				WorkspaceID: "123",
+			},
+		},
+	})
+	assert.ErrorContains(t, err, `docker registry "123.containers.us-west-2.cloud.databricks.com" is logged out; run `)
+	assert.ErrorContains(t, err, `databricks auth configure-docker --region us-west-2`)
+}
+
 func TestResolveDockerProfileRejectsAmbiguousWorkspaceIDFallback(t *testing.T) {
 	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
 	_, err := resolveDockerProfile(ctx, "123.containers.us-west-2.cloud.databricks.com", profile.InMemoryProfiler{

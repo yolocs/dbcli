@@ -114,6 +114,9 @@ func runDockerTokenCommand(ctx context.Context, cmd *cobra.Command, args []strin
 		ResolveProfile: func(ctx context.Context, registry dockercredentials.Registry) (string, error) {
 			return resolveDockerRegistryProfile(ctx, registry, profile.DefaultProfiler)
 		},
+		Erase: func(ctx context.Context, registry dockercredentials.Registry) error {
+			return dockercredentials.DisableBinding(ctx, registry.Host)
+		},
 		Token: func(ctx context.Context, profileName string) (string, error) {
 			tokenStore, mode, err := storage.ResolveStore(ctx, "")
 			if err != nil {
@@ -177,6 +180,9 @@ func resolveDockerRegistryProfile(ctx context.Context, registry dockercredential
 		return "", err
 	}
 	if ok {
+		if binding.Disabled {
+			return "", fmt.Errorf("docker registry %q is logged out; run `databricks auth configure-docker --region %s`", registry.Host, registry.Region)
+		}
 		p, err := loadProfileByName(ctx, binding.Profile, profiler)
 		if err != nil {
 			return "", err

@@ -76,6 +76,39 @@ func TestLoadBindingMissingFile(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestDisableBinding(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	err := DisableBinding(ctx, "https://123.containers.us-west-2.cloud.databricks.com/v2/")
+	require.NoError(t, err)
+
+	got, ok, err := LoadBinding(ctx, "123.containers.us-west-2.cloud.databricks.com")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, Binding{
+		RegistryHost: "123.containers.us-west-2.cloud.databricks.com",
+		WorkspaceID:  "123",
+		Disabled:     true,
+	}, got)
+}
+
+func TestSaveBindingReplacesDisabledBinding(t *testing.T) {
+	ctx := env.WithUserHomeDir(t.Context(), t.TempDir())
+	require.NoError(t, DisableBinding(ctx, "123.containers.us-west-2.cloud.databricks.com"))
+
+	binding := Binding{
+		RegistryHost:  "123.containers.us-west-2.cloud.databricks.com",
+		Profile:       "dev",
+		WorkspaceID:   "123",
+		WorkspaceHost: "https://workspace.test",
+	}
+	require.NoError(t, SaveBinding(ctx, binding))
+
+	got, ok, err := LoadBinding(ctx, binding.RegistryHost)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, binding, got)
+}
+
 func TestBindingPath(t *testing.T) {
 	home := t.TempDir()
 	ctx := env.WithUserHomeDir(t.Context(), home)

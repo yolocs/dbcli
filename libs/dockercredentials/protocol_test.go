@@ -47,19 +47,36 @@ func TestHandleProtocolGet(t *testing.T) {
 	require.Equal(t, "access-token", got["Secret"])
 }
 
-func TestHandleProtocolStoreEraseNoop(t *testing.T) {
-	for _, action := range []string{"store", "erase"} {
-		t.Run(action, func(t *testing.T) {
-			var stdout bytes.Buffer
-			err := HandleProtocol(t.Context(), action, ProtocolOptions{
-				In:  bytes.NewBufferString(`{"ServerURL":"123.containers.us-west-2.cloud.databricks.com"}`),
-				Out: &stdout,
-				Err: &bytes.Buffer{},
-			})
-			require.NoError(t, err)
-			require.Empty(t, stdout.String())
-		})
-	}
+func TestHandleProtocolStoreNoop(t *testing.T) {
+	var stdout bytes.Buffer
+	err := HandleProtocol(t.Context(), "store", ProtocolOptions{
+		In:  bytes.NewBufferString(`{"ServerURL":"123.containers.us-west-2.cloud.databricks.com"}`),
+		Out: &stdout,
+		Err: &bytes.Buffer{},
+	})
+	require.NoError(t, err)
+	require.Empty(t, stdout.String())
+}
+
+func TestHandleProtocolEraseCallsErase(t *testing.T) {
+	var stdout bytes.Buffer
+	var got Registry
+	err := HandleProtocol(t.Context(), "erase", ProtocolOptions{
+		In:  bytes.NewBufferString("123.containers.us-west-2.cloud.databricks.com"),
+		Out: &stdout,
+		Err: &bytes.Buffer{},
+		Erase: func(_ context.Context, registry Registry) error {
+			got = registry
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	require.Empty(t, stdout.String())
+	require.Equal(t, Registry{
+		WorkspaceID: "123",
+		Region:      "us-west-2",
+		Host:        "123.containers.us-west-2.cloud.databricks.com",
+	}, got)
 }
 
 func TestHandleProtocolList(t *testing.T) {
