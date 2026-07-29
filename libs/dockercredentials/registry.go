@@ -8,8 +8,10 @@ import (
 	"strings"
 )
 
-const HelperName = "databricks"
-const OAuthTokenUsername = "oauthtoken"
+const (
+	HelperName         = "databricks"
+	OAuthTokenUsername = "oauthtoken"
+)
 
 type Registry struct {
 	WorkspaceID string
